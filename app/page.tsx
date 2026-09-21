@@ -12,7 +12,7 @@ import { formatMoney } from "@/lib/format";
 
 export default function DashboardPage() {
   const { analyses, deleteAnalysis } = useAnalyses();
-  const totalMarketCap = analyses.reduce((sum, item) => sum + calculateMetrics(item).marketCap, 0);
+  const totalMarketCap = analyses.reduce((sum, item) => sum + (calculateMetrics(item).marketCap ?? 0), 0);
   const currencies = Array.from(new Set(analyses.map((analysis) => analysis.currency)));
   const marketCapSummary = currencies.length === 1
     ? formatMoney(totalMarketCap, currencies[0])

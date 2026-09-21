@@ -31,7 +31,7 @@ function ThesisForm({ analysis }: { analysis: NonNullable<ReturnType<ReturnType<
   const [thesis, setThesis] = useState<Thesis>(analysis.thesis);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
-  const upside = analysis.currentSharePrice > 0 && Number.isFinite(thesis.targetPrice) ? thesis.targetPrice / analysis.currentSharePrice - 1 : null;
+  const upside = analysis.currentSharePrice !== null && analysis.currentSharePrice > 0 && Number.isFinite(thesis.targetPrice) ? thesis.targetPrice / analysis.currentSharePrice - 1 : null;
 
   function setList(kind: "catalysts" | "risks", index: number, value: string) { setThesis((current) => ({ ...current, [kind]: current[kind].map((item, i) => i === index ? value : item) })); setSaved(false); }
   function addList(kind: "catalysts" | "risks") { if (thesis[kind].length < 6) setThesis((current) => ({ ...current, [kind]: [...current[kind], ""] })); }

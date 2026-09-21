@@ -12,6 +12,7 @@ import { FinancialYear } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 type CompanyFields = { companyName: string; ticker: string; industry: string; currency: string; currentSharePrice: string; sharesOutstanding: string; cash: string; debt: string };
+type ManualFinancialField = "revenue" | "ebitda" | "ebit" | "netIncome" | "freeCashFlow";
 const currentYear = new Date().getFullYear() - 1;
 const emptyFinancial = (year: number): FinancialYear => ({ year, revenue: 0, ebitda: 0, ebit: 0, netIncome: 0, freeCashFlow: 0 });
 
@@ -24,7 +25,7 @@ export function AnalysisForm() {
   const [financials, setFinancials] = useState<FinancialYear[]>([emptyFinancial(currentYear), emptyFinancial(currentYear - 1), emptyFinancial(currentYear - 2)]);
 
   function setField(field: keyof CompanyFields, value: string) { setCompany((current) => ({ ...current, [field]: value })); setError(""); }
-  function setFinancial(index: number, field: keyof FinancialYear, value: number) { setFinancials((items) => items.map((item, i) => i === index ? { ...item, [field]: value } : item)); setError(""); }
+  function setFinancial(index: number, field: "year" | ManualFinancialField, value: number) { setFinancials((items) => items.map((item, i) => i === index ? { ...item, [field]: value } : item)); setError(""); }
 
   function validateCompany() {
     if (!company.companyName.trim() || !company.ticker.trim() || !company.industry.trim()) return "Complete the company name, ticker and industry.";
@@ -40,7 +41,7 @@ export function AnalysisForm() {
     event.preventDefault();
     if (financials.some((row) => !Number.isInteger(row.year) || row.year < 1900 || row.year > currentYear || Object.values(row).some((value) => !Number.isFinite(value)))) { setError(`Enter a valid historical year from 1900 to ${currentYear} and a number in every financial field.`); return; }
     if (new Set(financials.map((row) => row.year)).size !== financials.length) { setError("Each financial row must use a different year."); return; }
-    if (financials.some((row) => row.revenue <= 0)) { setError("Revenue must be greater than zero for every year."); return; }
+    if (financials.some((row) => row.revenue === null || row.revenue <= 0)) { setError("Revenue must be greater than zero for every year."); return; }
     const id = `${company.ticker.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Date.now().toString(36)}`;
     saveAnalysis({ id, companyName: company.companyName.trim(), ticker: company.ticker.trim().toUpperCase(), industry: company.industry.trim(), currency: company.currency, currentSharePrice: Number(company.currentSharePrice), sharesOutstanding: Number(company.sharesOutstanding), cash: Number(company.cash), debt: Number(company.debt), financials: [...financials].sort((a, b) => a.year - b.year), thesis: { summary: "", recommendation: "Hold", targetPrice: Number(company.currentSharePrice), catalysts: [""], risks: [""] }, updatedAt: new Date().toISOString() });
     router.push(`/analysis/${id}`);
@@ -52,7 +53,7 @@ export function AnalysisForm() {
     { key: "cash", label: "Cash & equivalents", suffix: "millions", placeholder: "0" },
     { key: "debt", label: "Total debt", suffix: "millions", placeholder: "0" }
   ];
-  const financialFields: { key: Exclude<keyof FinancialYear, "year">; label: string }[] = [{ key: "revenue", label: "Revenue" }, { key: "ebitda", label: "EBITDA" }, { key: "ebit", label: "EBIT" }, { key: "netIncome", label: "Net income" }, { key: "freeCashFlow", label: "Free cash flow" }];
+  const financialFields: { key: ManualFinancialField; label: string }[] = [{ key: "revenue", label: "Revenue" }, { key: "ebitda", label: "EBITDA" }, { key: "ebit", label: "EBIT" }, { key: "netIncome", label: "Net income" }, { key: "freeCashFlow", label: "Free cash flow" }];
 
   return (
     <form onSubmit={submit}>
@@ -67,7 +68,7 @@ export function AnalysisForm() {
         <div><Label htmlFor="currency">Currency</Label><select id="currency" className="h-10 w-full rounded-md border bg-white px-3 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-blue-100" value={company.currency} onChange={(e) => setField("currency", e.target.value)}>{["USD", "EUR", "GBP", "CAD", "AUD"].map((value) => <option key={value}>{value}</option>)}</select></div>
         {numberFields.map((field) => <div key={field.key}><Label htmlFor={field.key}>{field.label}</Label><div className="relative"><Input id={field.key} type="number" min="0" step="any" placeholder={field.placeholder} className="pr-20" value={company[field.key]} onChange={(e) => setField(field.key, e.target.value)} /><span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-bold uppercase text-slate-400">{field.suffix}</span></div></div>)}
         <div className="flex justify-end border-t pt-5 sm:col-span-2"><Button type="button" variant="accent" onClick={continueToFinancials}>Continue <ArrowRight size={16} /></Button></div>
-      </CardContent></Card> : <Card><CardHeader className="border-b"><CardTitle>Historical financials</CardTitle><p className="text-sm text-slate-500">Add up to five years. Enter all figures in {company.currency} millions.</p></CardHeader><CardContent className="pt-5"><div className="scrollbar-thin overflow-x-auto"><table className="w-full min-w-[800px] text-left"><thead><tr>{["Year", ...financialFields.map((field) => field.label), ""].map((label) => <th key={label} className="pb-3 pr-3 text-[10px] font-bold uppercase tracking-wider text-slate-400">{label}</th>)}</tr></thead><tbody>{financials.map((row, index) => <tr key={index} className="border-t"><td className="w-28 py-3 pr-3"><Input aria-label={`Year ${index + 1}`} type="number" min="1900" max="2100" value={row.year} onChange={(e) => setFinancial(index, "year", Number(e.target.value))} /></td>{financialFields.map((field) => <td key={field.key} className="py-3 pr-3"><Input aria-label={`${field.label} for row ${index + 1}`} type="number" step="any" value={row[field.key]} onChange={(e) => setFinancial(index, field.key, Number(e.target.value))} /></td>)}<td className="py-3"><Button aria-label={`Delete year ${row.year}`} type="button" variant="ghost" size="icon" disabled={financials.length === 1} onClick={() => setFinancials(financials.filter((_, i) => i !== index))}><Trash2 size={15} /></Button></td></tr>)}</tbody></table></div>
+      </CardContent></Card> : <Card><CardHeader className="border-b"><CardTitle>Historical financials</CardTitle><p className="text-sm text-slate-500">Add up to five years. Enter all figures in {company.currency} millions.</p></CardHeader><CardContent className="pt-5"><div className="scrollbar-thin overflow-x-auto"><table className="w-full min-w-[800px] text-left"><thead><tr>{["Year", ...financialFields.map((field) => field.label), ""].map((label) => <th key={label} className="pb-3 pr-3 text-[10px] font-bold uppercase tracking-wider text-slate-400">{label}</th>)}</tr></thead><tbody>{financials.map((row, index) => <tr key={index} className="border-t"><td className="w-28 py-3 pr-3"><Input aria-label={`Year ${index + 1}`} type="number" min="1900" max="2100" value={row.year} onChange={(e) => setFinancial(index, "year", Number(e.target.value))} /></td>{financialFields.map((field) => <td key={field.key} className="py-3 pr-3"><Input aria-label={`${field.label} for row ${index + 1}`} type="number" step="any" value={row[field.key] ?? ""} onChange={(e) => setFinancial(index, field.key, Number(e.target.value))} /></td>)}<td className="py-3"><Button aria-label={`Delete year ${row.year}`} type="button" variant="ghost" size="icon" disabled={financials.length === 1} onClick={() => setFinancials(financials.filter((_, i) => i !== index))}><Trash2 size={15} /></Button></td></tr>)}</tbody></table></div>
         <div className="mt-4 flex flex-col justify-between gap-3 border-t pt-5 sm:flex-row"><Button type="button" variant="outline" size="sm" disabled={financials.length >= 5} onClick={() => setFinancials([...financials, emptyFinancial(Math.min(...financials.map((row) => row.year)) - 1)])}><Plus size={15} />Add year</Button><div className="flex gap-2"><Button type="button" variant="ghost" onClick={() => { setError(""); setStep(1); }}><ArrowLeft size={16} />Back</Button><Button type="submit" variant="accent">Create analysis <ArrowRight size={16} /></Button></div></div>
       </CardContent></Card>}
     </form>
