@@ -23,7 +23,11 @@ export function AnalysisProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     try {
       const saved = window.localStorage.getItem(STORAGE_KEY);
-      if (saved) setAnalyses(JSON.parse(saved));
+      if (saved) {
+        const parsed: unknown = JSON.parse(saved);
+        if (!Array.isArray(parsed)) throw new Error("Invalid saved analysis data");
+        setAnalyses(parsed as CompanyAnalysis[]);
+      }
       else window.localStorage.setItem(STORAGE_KEY, JSON.stringify([sampleAnalysis]));
     } catch {
       // The sample remains available if storage is disabled or contains invalid data.

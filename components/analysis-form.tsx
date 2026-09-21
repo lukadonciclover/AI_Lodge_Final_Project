@@ -23,8 +23,8 @@ export function AnalysisForm() {
   const [company, setCompany] = useState<CompanyFields>({ companyName: "", ticker: "", industry: "", currency: "USD", currentSharePrice: "", sharesOutstanding: "", cash: "", debt: "" });
   const [financials, setFinancials] = useState<FinancialYear[]>([emptyFinancial(currentYear), emptyFinancial(currentYear - 1), emptyFinancial(currentYear - 2)]);
 
-  function setField(field: keyof CompanyFields, value: string) { setCompany((current) => ({ ...current, [field]: value })); }
-  function setFinancial(index: number, field: keyof FinancialYear, value: number) { setFinancials((items) => items.map((item, i) => i === index ? { ...item, [field]: value } : item)); }
+  function setField(field: keyof CompanyFields, value: string) { setCompany((current) => ({ ...current, [field]: value })); setError(""); }
+  function setFinancial(index: number, field: keyof FinancialYear, value: number) { setFinancials((items) => items.map((item, i) => i === index ? { ...item, [field]: value } : item)); setError(""); }
 
   function validateCompany() {
     if (!company.companyName.trim() || !company.ticker.trim() || !company.industry.trim()) return "Complete the company name, ticker and industry.";
@@ -38,7 +38,7 @@ export function AnalysisForm() {
 
   function submit(event: FormEvent) {
     event.preventDefault();
-    if (financials.some((row) => !Number.isInteger(row.year) || row.year < 1900 || Object.values(row).some((value) => !Number.isFinite(value)))) { setError("Check that every financial input contains a valid number."); return; }
+    if (financials.some((row) => !Number.isInteger(row.year) || row.year < 1900 || row.year > currentYear || Object.values(row).some((value) => !Number.isFinite(value)))) { setError(`Enter a valid historical year from 1900 to ${currentYear} and a number in every financial field.`); return; }
     if (new Set(financials.map((row) => row.year)).size !== financials.length) { setError("Each financial row must use a different year."); return; }
     if (financials.some((row) => row.revenue <= 0)) { setError("Revenue must be greater than zero for every year."); return; }
     const id = `${company.ticker.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Date.now().toString(36)}`;

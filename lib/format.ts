@@ -1,6 +1,7 @@
 export const currencySymbols: Record<string, string> = { USD: "$", EUR: "€", GBP: "£", CAD: "C$", AUD: "A$" };
 
 export function formatMoney(value: number, currency = "USD", compact = true) {
+  if (!Number.isFinite(value)) return "—";
   const symbol = currencySymbols[currency] ?? `${currency} `;
   const abs = Math.abs(value);
   if (compact) {
@@ -11,7 +12,7 @@ export function formatMoney(value: number, currency = "USD", compact = true) {
 }
 
 export function formatPercent(value: number | null, digits = 1) {
-  return value === null ? "—" : `${(value * 100).toFixed(digits)}%`;
+  return value === null || !Number.isFinite(value) ? "—" : `${(value * 100).toFixed(digits)}%`;
 }
 
 export function formatMultiple(value: number | null) {
