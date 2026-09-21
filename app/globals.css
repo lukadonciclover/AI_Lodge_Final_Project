@@ -1,0 +1,14 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { color-scheme: light; }
+* { border-color: #dce3ec; }
+body { color: #142033; background: #f4f7fa; font-feature-settings: "tnum" 1, "cv02" 1; }
+::selection { background: #d8eaff; color: #07111f; }
+
+@layer utilities {
+  .financial-number { font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+  .scrollbar-thin::-webkit-scrollbar { height: 6px; width: 6px; }
+  .scrollbar-thin::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 99px; }
+}
