@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, Building2, MoreHorizontal, Trash2 } from "lucide-react";
+import { ArrowRight, MoreHorizontal, Trash2 } from "lucide-react";
 import { CompanyAnalysis } from "@/lib/types";
 import { calculateMetrics, latestFinancials } from "@/lib/finance";
 import { formatDate, formatMoney, formatPercent } from "@/lib/format";
