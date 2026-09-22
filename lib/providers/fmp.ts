@@ -8,8 +8,94 @@ import {
   FinancialDataProviderError,
   type CompanySearchResult,
   type FinancialDataProvider,
+  type FinancialDataProviderErrorCode,
   type ImportedCompany,
 } from "@/lib/providers/types";
+
+const SUBSCRIPTION_KEYWORDS = [
+  "subscription",
+  "not part of your",
+  "not subscribed",
+  "upgrade",
+  "premium",
+  "entitlement",
+  "not authorized",
+] as const;
+
+const RATE_LIMIT_KEYWORDS = [
+  "limit",
+  "too many",
+  "throttled",
+  "calls per minute",
+] as const;
+
+const AUTH_KEYWORDS = [
+  "api key",
+  "apikey",
+  "authentication",
+  "unauthorized",
+  "invalid key",
+  "wrong key",
+  "invalid credentials",
+  "not active",
+] as const;
+
+function containsAny(normalized: string, keywords: readonly string[]): boolean {
+  return keywords.some((keyword) => normalized.includes(keyword));
+}
+
+function classifyProviderError(message: string): FinancialDataProviderErrorCode {
+  const normalized = message.toLowerCase();
+  if (containsAny(normalized, SUBSCRIPTION_KEYWORDS)) return "SUBSCRIPTION";
+  if (containsAny(normalized, RATE_LIMIT_KEYWORDS)) return "RATE_LIMIT";
+  if (containsAny(normalized, AUTH_KEYWORDS)) return "INVALID_API_KEY";
+  return "PROVIDER_DOWN";
+}
+
+function extractErrorMessage(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") return null;
+  const record = payload as Record<string, unknown>;
+  for (const key of ["Error Message", "message", "errorMessage", "error", "HTTP MESSAGE", "Message"]) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return null;
+}
+
+function statusCodeFor(code: FinancialDataProviderErrorCode): number {
+  switch (code) {
+    case "MISSING_API_KEY": return 503;
+    case "INVALID_API_KEY": return 503;
+    case "SUBSCRIPTION": return 403;
+    case "RATE_LIMIT": return 429;
+    case "NOT_FOUND": return 404;
+    case "INVALID_REQUEST": return 400;
+    case "PROVIDER_DOWN": return 502;
+  }
+}
+
+function messageFor(code: FinancialDataProviderErrorCode): string {
+  switch (code) {
+    case "MISSING_API_KEY":
+      return "Financial data is not configured. Add the server-side FMP_API_KEY environment variable locally in .env.local and in your Vercel project settings, then restart or redeploy.";
+    case "INVALID_API_KEY":
+      return "Financial data authentication failed. The server API key (FMP_API_KEY) is invalid or expired — check it locally in .env.local and in your Vercel project settings.";
+    case "SUBSCRIPTION":
+      return "Your Financial Modeling Prep plan does not provide access to the requested data. Check your subscription and endpoint entitlements.";
+    case "RATE_LIMIT":
+      return "Financial data request limit reached. Please try again later.";
+    case "NOT_FOUND":
+      return "No matching company was found.";
+    case "INVALID_REQUEST":
+      return "The financial data request was invalid.";
+    case "PROVIDER_DOWN":
+      return "Financial Modeling Prep is temporarily unavailable. Please try again shortly.";
+  }
+}
+
+function providerError(code: FinancialDataProviderErrorCode, cause?: unknown): FinancialDataProviderError {
+  return new FinancialDataProviderError(messageFor(code), statusCodeFor(code), code, cause);
+}
 
 type NextFetchInit = RequestInit & { next?: { revalidate: number } };
 export type ProviderFetch = (input: string | URL, init?: NextFetchInit) => Promise<Response>;
@@ -30,7 +116,7 @@ export class FmpFinancialDataProvider implements FinancialDataProvider {
 
   constructor(private readonly options: FmpProviderOptions) {
     if (!options.apiKey.trim()) {
-      throw new FinancialDataProviderError("FMP_API_KEY is not configured.", 503);
+      throw providerError("MISSING_API_KEY");
     }
     this.fetcher = options.fetch ?? fetch;
     this.baseUrl = options.baseUrl ?? "https://financialmodelingprep.com/api/v3";
@@ -71,7 +157,11 @@ export class FmpFinancialDataProvider implements FinancialDataProvider {
   async importCompany(symbol: string): Promise<ImportedCompany> {
     const normalizedSymbol = symbol.trim().toUpperCase();
     if (!/^[A-Z0-9.-]{1,20}$/.test(normalizedSymbol)) {
-      throw new FinancialDataProviderError("Invalid company symbol.", 400);
+      throw new FinancialDataProviderError(
+        "Invalid company symbol.",
+        400,
+        "INVALID_REQUEST",
+      );
     }
     const [profilePayload, quotePayload, incomePayload, balancePayload, cashFlowPayload] =
       await Promise.all([
@@ -84,7 +174,11 @@ export class FmpFinancialDataProvider implements FinancialDataProvider {
 
     const profile = firstFmpRecord(profilePayload);
     if (!profile) {
-      throw new FinancialDataProviderError(`No company found for symbol ${normalizedSymbol}.`, 404);
+      throw new FinancialDataProviderError(
+        `No company found for symbol ${normalizedSymbol}.`,
+        404,
+        "NOT_FOUND",
+      );
     }
 
     return normalizeCompany({
@@ -100,7 +194,11 @@ export class FmpFinancialDataProvider implements FinancialDataProvider {
 
   private records(payload: unknown, label: string): FmpRecord[] {
     if (!Array.isArray(payload)) {
-      throw new FinancialDataProviderError(`FMP returned invalid ${label}.`);
+      throw new FinancialDataProviderError(
+        `Financial Modeling Prep returned invalid ${label}.`,
+        502,
+        "PROVIDER_DOWN",
+      );
     }
     return payload.filter((item): item is FmpRecord => Boolean(item) && typeof item === "object");
   }
@@ -118,35 +216,48 @@ export class FmpFinancialDataProvider implements FinancialDataProvider {
     try {
       response = await this.fetcher(url, { next: { revalidate } });
     } catch (error) {
-      throw new FinancialDataProviderError("Unable to reach Financial Modeling Prep.", 502, error);
+      throw providerError("PROVIDER_DOWN", error);
     }
     if (!response.ok) {
-      const message = response.status === 401 || response.status === 403
-        ? "Financial data authentication failed. Check the server API key."
-        : response.status === 429
-          ? "Financial data request limit reached. Please try again later."
-          : `Financial Modeling Prep request failed with status ${response.status}.`;
-      throw new FinancialDataProviderError(
-        message,
-        response.status === 429 ? 429 : response.status === 401 || response.status === 403 ? 503 : 502,
-      );
+      throw await this.httpError(response);
     }
 
     let payload: unknown;
     try {
       payload = await response.json();
     } catch (error) {
-      throw new FinancialDataProviderError("Financial Modeling Prep returned invalid JSON.", 502, error);
+      throw providerError("PROVIDER_DOWN", error);
     }
-    if (payload && typeof payload === "object" && !Array.isArray(payload)) {
-      const errorMessage = (payload as Record<string, unknown>)["Error Message"];
-      if (typeof errorMessage === "string") {
-        const normalized = errorMessage.toLowerCase();
-        if (normalized.includes("api key") || normalized.includes("apikey")) throw new FinancialDataProviderError("Financial data authentication failed. Check the server API key.", 503);
-        if (normalized.includes("limit") || normalized.includes("rate")) throw new FinancialDataProviderError("Financial data request limit reached. Please try again later.", 429);
-        throw new FinancialDataProviderError("Financial Modeling Prep rejected the request.", 502);
-      }
+    const providerMessage = extractErrorMessage(payload);
+    if (providerMessage) {
+      const code = classifyProviderError(providerMessage);
+      throw new FinancialDataProviderError(
+        messageFor(code),
+        statusCodeFor(code),
+        code,
+        providerMessage,
+      );
     }
     return payload;
+  }
+
+  private async httpError(response: Response): Promise<FinancialDataProviderError> {
+    if (response.status === 429) {
+      return providerError("RATE_LIMIT");
+    }
+
+    let details: string | null = null;
+    try {
+      details = extractErrorMessage(await response.json());
+    } catch {
+      details = null;
+    }
+
+    if (response.status === 401 || response.status === 403) {
+      const code = details ? classifyProviderError(details) : "INVALID_API_KEY";
+      return new FinancialDataProviderError(messageFor(code), statusCodeFor(code), code, details);
+    }
+
+    return providerError("PROVIDER_DOWN");
   }
 }

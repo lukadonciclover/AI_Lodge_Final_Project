@@ -24,7 +24,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ company });
   } catch (error) {
     if (error instanceof FinancialDataProviderError) {
-      return NextResponse.json({ error: error.message }, { status: error.statusCode });
+      return NextResponse.json(
+        { error: error.message, code: error.code },
+        { status: error.statusCode },
+      );
     }
     console.error("Company import failed", error);
     return NextResponse.json({ error: "Unable to import company financials." }, { status: 500 });

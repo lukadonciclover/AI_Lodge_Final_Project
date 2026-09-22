@@ -83,10 +83,20 @@ export interface FinancialDataProvider {
   importCompany(symbol: string): Promise<ImportedCompany>;
 }
 
+export type FinancialDataProviderErrorCode =
+  | "MISSING_API_KEY"
+  | "INVALID_API_KEY"
+  | "SUBSCRIPTION"
+  | "RATE_LIMIT"
+  | "PROVIDER_DOWN"
+  | "NOT_FOUND"
+  | "INVALID_REQUEST";
+
 export class FinancialDataProviderError extends Error {
   constructor(
     message: string,
     public readonly statusCode = 502,
+    public readonly code: FinancialDataProviderErrorCode = "PROVIDER_DOWN",
     public readonly cause?: unknown,
   ) {
     super(message);

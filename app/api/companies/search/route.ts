@@ -21,7 +21,10 @@ export async function GET(request: Request) {
 
 function providerErrorResponse(error: unknown) {
   if (error instanceof FinancialDataProviderError) {
-    return NextResponse.json({ error: error.message }, { status: error.statusCode });
+    return NextResponse.json(
+      { error: error.message, code: error.code },
+      { status: error.statusCode },
+    );
   }
   console.error("Company search failed", error);
   return NextResponse.json({ error: "Unable to search companies." }, { status: 500 });
