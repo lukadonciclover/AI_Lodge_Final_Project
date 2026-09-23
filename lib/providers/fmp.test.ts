@@ -103,21 +103,94 @@ describe("FmpFinancialDataProvider", () => {
       fetch: vi.fn(async () => jsonResponse({ "Error Message": "Invalid API KEY" })) as ProviderFetch,
     });
 
-    await expect(provider.searchCompanies("Apple")).rejects.toMatchObject({ statusCode: 503, category: "authentication", message: expect.stringContaining("authentication error") });
+    await expect(provider.searchCompanies("Apple")).rejects.toMatchObject({
+      statusCode: 503,
+      code: "INVALID_API_KEY",
+      category: "authentication",
+      message: expect.stringMatching(/authentication error.*authentication failed/i),
+    });
   });
 
   it("returns a useful rate-limit error", async () => {
     const provider = new FmpFinancialDataProvider({ apiKey: "key", fetch: vi.fn(async () => jsonResponse({}, 429)) as ProviderFetch });
-    await expect(provider.searchCompanies("Apple")).rejects.toMatchObject({ statusCode: 429, category: "rate_limit", message: expect.stringContaining("rate-limit error") });
+    await expect(provider.searchCompanies("Apple")).rejects.toMatchObject({
+      statusCode: 429,
+      code: "RATE_LIMIT",
+      category: "rate_limit",
+      message: expect.stringContaining("limit reached"),
+    });
   });
 
   it("distinguishes subscription access from authentication failures", async () => {
     const provider = new FmpFinancialDataProvider({ apiKey: "key", fetch: vi.fn(async () => jsonResponse({ message: "Payment Required" }, 402)) as ProviderFetch });
-    await expect(provider.searchCompanies("Apple")).rejects.toMatchObject({ statusCode: 503, category: "subscription", message: expect.stringContaining("subscription tier") });
+    await expect(provider.searchCompanies("Apple")).rejects.toMatchObject({ statusCode: 403, code: "SUBSCRIPTION", category: "subscription" });
   });
 
   it("distinguishes malformed queries", async () => {
     const provider = new FmpFinancialDataProvider({ apiKey: "key", fetch: vi.fn(async () => jsonResponse({ message: "Invalid query" }, 400)) as ProviderFetch });
-    await expect(provider.searchCompanies("???")).rejects.toMatchObject({ statusCode: 400, category: "invalid_query", message: expect.stringContaining("query error") });
+    await expect(provider.searchCompanies("???")).rejects.toMatchObject({ statusCode: 400, code: "INVALID_REQUEST", category: "invalid_query" });
+  });
+
+  it("classifies a missing API key without contacting the provider", () => {
+    let caught: unknown;
+    try {
+      new FmpFinancialDataProvider({ apiKey: "  " });
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(FinancialDataProviderError);
+    const providerError = caught as FinancialDataProviderError;
+    expect(providerError.statusCode).toBe(503);
+    expect(providerError.code).toBe("MISSING_API_KEY");
+    expect(providerError.message).toContain("FMP_API_KEY");
+  });
+
+  it("classifies invalid authentication returned over HTTP 401", async () => {
+    const provider = new FmpFinancialDataProvider({
+      apiKey: "key",
+      fetch: vi.fn(async () => jsonResponse({ "Error Message": "Invalid API KEY" }, 401)) as ProviderFetch,
+    });
+
+    await expect(provider.searchCompanies("Apple")).rejects.toMatchObject({
+      statusCode: 503,
+      code: "INVALID_API_KEY",
+    });
+  });
+
+  it("classifies subscription and endpoint-access limitations", async () => {
+    const provider = new FmpFinancialDataProvider({
+      apiKey: "key",
+      fetch: vi.fn(async () => jsonResponse(
+        { "Error Message": "This API endpoint is not part of your subscription." },
+        403,
+      )) as ProviderFetch,
+    });
+
+    await expect(provider.searchCompanies("Apple")).rejects.toMatchObject({
+      statusCode: 403,
+      code: "SUBSCRIPTION",
+    });
+  });
+
+  it("classifies provider downtime as a distinct error", async () => {
+    const provider = new FmpFinancialDataProvider({
+      apiKey: "key",
+      fetch: vi.fn(async () => { throw new TypeError("ECONNREFUSED"); }) as ProviderFetch,
+    });
+
+    await expect(provider.searchCompanies("Apple")).rejects.toMatchObject({
+      statusCode: 502,
+      code: "PROVIDER_DOWN",
+    });
+  });
+
+  it("returns no results when the provider has no matching company", async () => {
+    const provider = new FmpFinancialDataProvider({
+      apiKey: "key",
+      fetch: vi.fn(async () => jsonResponse([])) as ProviderFetch,
+    });
+
+    await expect(provider.searchCompanies("nonexistent-ticker").then((r) => r.length)).resolves.toBe(0);
+    await expect(provider.searchCompanies(" nonexistent-ticker ")).resolves.toEqual([]);
   });
 });
