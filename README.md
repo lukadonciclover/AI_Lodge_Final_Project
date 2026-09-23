@@ -8,7 +8,8 @@ The MVP ships with a fictional sample company, Nova Systems, so the full workflo
 
 - Dashboard for creating, opening, and deleting saved company analyses
 - Guided company and historical-financial-data entry
-- Financial Modeling Prep company search and five-year annual-statement import
+- SEC Company Facts annual statements with Alpha Vantage company, search, and price data
+- Alpha Vantage statement fallback and optional FMP company-search fallback
 - Editable import review, source warnings, filing links, and refresh comparison
 - Input validation for required fields, years, monetary values, and share data
 - Automatic market capitalisation, enterprise value, growth, margin, and trading-multiple calculations
@@ -43,15 +44,19 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
-### Financial Modeling Prep Setup
+### Financial Data Setup
 
-Copy `.env.example` to `.env.local` and add a Financial Modeling Prep API key:
+Copy `.env.example` to `.env.local`. Add an Alpha Vantage key and an SEC-compliant User-Agent containing an application name and monitored contact email. FMP is optional and used only if Alpha Vantage search is unavailable or empty:
 
 ```bash
-FMP_API_KEY=your_server_side_key
+ALPHA_VANTAGE_API_KEY=your_server_side_key
+SEC_USER_AGENT=InvestmentPitchCopilot/1.0 your-contact-email@example.com
+FMP_API_KEY=optional_search_fallback_key
 ```
 
-Restart the development server after changing environment variables. The key is read only by Next.js route handlers and is never sent to browser code. Do not commit `.env.local`.
+Restart the development server after changing environment variables. Keys are read only by Next.js route handlers and are never sent to browser code. Do not commit `.env.local`.
+
+For deployments, set the same variables in the hosting provider's server-side environment settings; the local `.env.local` file is not deployed. SEC EDGAR does not require a key, but it requires the identifying User-Agent. The server throttles SEC request starts below 10 requests per second and caches ticker mappings and Company Facts responses.
 
 To import a company:
 
@@ -108,10 +113,13 @@ Valuation multiples display `N/M` when their denominator is zero or negative. Mi
 
 ## Data-Source Limitations
 
-- Financial Modeling Prep coverage varies by exchange, security type, plan, and API entitlement.
+- SEC Company Facts is the primary statement source for supported US SEC filers. Taxonomy differences can leave individual fields unavailable.
+- Alpha Vantage supplies symbol search, company overview, historical daily prices, and fallback statements. Its free tier has a limited daily request allowance.
+- FMP is an optional company-search fallback only; paid FMP statement endpoints are not used by the hybrid importer.
 - The importer requests annual statements only and keeps at most five fiscal years.
 - Provider figures are normalized to millions, except share price and EPS. Values are not currency-converted.
-- Restated records for the same fiscal year are deduplicated using the latest filing timestamp available from the provider.
+- SEC facts are deduplicated by period and the latest filing/accession, including amendments. Filing date, form, fiscal period, and accession number are retained.
+- Free cash flow is derived as operating cash flow minus positive capital expenditure; both source values remain visible.
 - Missing statements, partial histories, period mismatches, and currency inconsistencies are surfaced during review.
 - API responses may be delayed and should be checked against the linked filing before use in an investment presentation.
 - Successful upstream requests use Next.js fetch caching to reduce duplicate provider calls.
@@ -120,6 +128,6 @@ Valuation multiples display `N/M` when their denominator is zero or negative. Mi
 
 Analyses are stored in the browser under the local-storage key `investment-pitch-copilot-analyses`. Data is specific to the browser and device, and clearing browser storage removes saved analyses. When no saved data exists, the sample Nova Systems analysis is added automatically.
 
-Run the mocked test suite with `npm test`. Tests never call the live Financial Modeling Prep API.
+Run the mocked test suite with `npm test`. Tests never print API keys or call live keyed provider APIs.
 
 This MVP intentionally does not include authentication, PDF extraction, AI-generated recommendations, DCF valuation, or presentation export.

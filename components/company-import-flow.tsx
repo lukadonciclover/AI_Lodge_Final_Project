@@ -19,13 +19,19 @@ type Props = {
   onConfirm?: (company: ImportedCompany, adjustedFields: string[]) => void;
 };
 
+type CompanyApiPayload = {
+  error?: string;
+  results?: CompanySearchResult[];
+  company?: ImportedCompany;
+};
+
 const incomeFields = [
-  ["Revenue", "revenueMillion"], ["Gross profit", "grossProfitMillion"], ["EBITDA", "ebitdaMillion"],
+  ["Revenue", "revenueMillion"], ["Cost of revenue", "costOfRevenueMillion"], ["Gross profit", "grossProfitMillion"], ["EBITDA", "ebitdaMillion"],
   ["Operating income", "ebitMillion"], ["Net income", "netIncomeMillion"], ["EPS", "eps"],
 ] as const;
 const balanceFields = [
   ["Cash & equivalents", "cashMillion"], ["Short-term investments", "shortTermInvestmentsMillion"],
-  ["Total assets", "totalAssetsMillion"], ["Short-term debt", "shortTermDebtMillion"],
+  ["Total assets", "totalAssetsMillion"], ["Current assets", "currentAssetsMillion"], ["Current liabilities", "currentLiabilitiesMillion"], ["Short-term debt", "shortTermDebtMillion"],
   ["Long-term debt", "longTermDebtMillion"], ["Total debt", "debtMillion"],
   ["Total liabilities", "totalLiabilitiesMillion"], ["Shareholders' equity", "shareholdersEquityMillion"],
 ] as const;
@@ -51,10 +57,11 @@ export function CompanyImportFlow({ onCancel, initialCompany, existingId, onConf
     setLoading(true); setError(""); setResults([]);
     try {
       const response = await fetch(`/api/companies/search?q=${encodeURIComponent(query.trim())}`);
-      const payload = await response.json();
+      const payload = await readApiPayload(response);
       if (!response.ok) throw new Error(payload.error || "Company search failed.");
-      setResults(payload.results);
-      if (!payload.results.length) setError("No listed companies matched that search. Check the name or ticker and try again.");
+      const searchResults = payload.results ?? [];
+      setResults(searchResults);
+      if (!searchResults.length) setError("No listed companies matched that search. Check the name or ticker and try again.");
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Unable to search companies. Please try again.");
     } finally { setLoading(false); }
@@ -66,8 +73,8 @@ export function CompanyImportFlow({ onCancel, initialCompany, existingId, onConf
       const response = await fetch("/api/companies/import", {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ symbol: result.symbol }),
       });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || "Financial statements could not be retrieved.");
+      const payload = await readApiPayload(response);
+      if (!response.ok || !payload.company) throw new Error(payload.error || "Financial statements could not be retrieved.");
       setCompany(payload.company);
       setAdjusted(new Set());
     } catch (requestError) {
@@ -106,7 +113,7 @@ export function CompanyImportFlow({ onCancel, initialCompany, existingId, onConf
           </form>
           {error && <ErrorMessage message={error} />}
           {loading && <div className="mt-8 flex items-center justify-center gap-2 py-10 text-sm text-slate-500"><LoaderCircle className="animate-spin text-accent" size={20} />Retrieving company data...</div>}
-          {!loading && results.length > 0 && <div className="mt-6 overflow-hidden rounded-md border"><div className="bg-slate-50 px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Select the correct company</div>{results.map((result) => <button key={`${result.symbol}-${result.exchange}`} type="button" className="flex w-full items-center justify-between gap-4 border-t px-4 py-4 text-left hover:bg-blue-50/50" onClick={() => selectCompany(result)}><span className="flex min-w-0 items-center gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-blue-50 text-xs font-bold text-accent">{result.symbol.slice(0, 2)}</span><span className="min-w-0"><strong className="block truncate text-sm text-ink">{result.name}</strong><span className="mt-0.5 block text-xs text-slate-500">{result.symbol} · {result.exchangeShortName ?? result.exchange ?? "Exchange unavailable"}</span></span></span><span className="shrink-0 text-xs text-slate-400">{result.country ?? result.exchange ?? "Location unavailable"}</span></button>)}</div>}
+          {!loading && results.length > 0 && <div className="mt-6 overflow-hidden rounded-md border"><div className="bg-slate-50 px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Select the correct company</div>{results.map((result) => <button key={`${result.symbol}-${result.exchange}`} type="button" className="flex w-full items-center justify-between gap-4 border-t px-4 py-4 text-left hover:bg-blue-50/50" onClick={() => selectCompany(result)}><span className="flex min-w-0 items-center gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-blue-50 text-xs font-bold text-accent">{result.symbol.slice(0, 2)}</span><span className="min-w-0"><strong className="block truncate text-sm text-ink">{result.name}</strong><span className="mt-0.5 block text-xs text-slate-500">{result.symbol} · {result.exchangeShortName ?? result.exchange ?? "Exchange unavailable"}</span></span></span><span className="shrink-0 text-right text-xs text-slate-400">{result.country ?? result.exchange ?? "Location unavailable"}{result.sourceProvider && <span className="block">Source: {result.sourceProvider}</span>}</span></button>)}</div>}
         </CardContent>
       </Card>
     </div>
@@ -167,7 +174,7 @@ function ImportReview({ company, adjusted, setCompany, setAdjusted, error, onCon
 }
 
 function StatementTable({ title, fields, periods, adjusted, setPeriod }: { title: string; fields: readonly (readonly [string, keyof ImportedAnnualFinancials])[]; periods: ImportedAnnualFinancials[]; adjusted: Set<string>; setPeriod: (index: number, field: keyof ImportedAnnualFinancials, value: string) => void }) {
-  return <Card className="overflow-hidden"><CardHeader className="border-b"><CardTitle>{title}</CardTitle><p className="text-xs text-slate-500">Annual periods · reporting-currency millions unless noted</p></CardHeader><div className="scrollbar-thin overflow-x-auto"><table className="w-full min-w-[850px] text-sm"><thead className="bg-slate-50"><tr><th className="px-4 py-3 text-left text-[10px] font-bold uppercase text-slate-500">Metric</th>{periods.map((period) => <th key={period.fiscalYear} className="px-3 py-3 text-right text-[10px] font-bold uppercase text-slate-500">FY {period.fiscalYear}<span className="block font-normal normal-case text-slate-400">{period.periodEnd ?? "Date N/A"}</span></th>)}</tr></thead><tbody>{fields.map(([label, field]) => <tr key={field} className="border-t"><td className="whitespace-nowrap px-4 py-3 font-medium">{label}</td>{periods.map((period) => { const originalIndex = periods.indexOf(period); const path = `financials.${period.fiscalYear}.${importFieldToAnalysisField(field)}`; const value = period[field]; return <td key={period.fiscalYear} className="min-w-32 px-3 py-2"><Input aria-label={`${label} ${period.fiscalYear}`} type="number" step="any" className="text-right financial-number" placeholder="N/A" value={typeof value === "number" ? value : ""} onChange={(event) => setPeriod(originalIndex, field, event.target.value)} />{adjusted.has(path) && <Adjusted />}</td>; })}</tr>)}</tbody></table></div></Card>;
+  return <Card className="overflow-hidden"><CardHeader className="border-b"><CardTitle>{title}</CardTitle><p className="text-xs text-slate-500">Annual periods · reporting-currency millions unless noted</p></CardHeader><div className="scrollbar-thin overflow-x-auto"><table className="w-full min-w-[850px] text-sm"><thead className="bg-slate-50"><tr><th className="px-4 py-3 text-left text-[10px] font-bold uppercase text-slate-500">Metric</th>{periods.map((period) => <th key={period.fiscalYear} className="px-3 py-3 text-right text-[10px] font-bold uppercase text-slate-500">FY {period.fiscalYear}<span className="block font-normal normal-case text-slate-400">{period.periodEnd ?? "Date N/A"}</span>{period.sourceProvider && <span className="block font-normal normal-case text-slate-400">{period.sourceProvider}{period.form ? ` · ${period.form}` : ""}</span>}</th>)}</tr></thead><tbody>{fields.map(([label, field]) => <tr key={field} className="border-t"><td className="whitespace-nowrap px-4 py-3 font-medium">{label}</td>{periods.map((period) => { const originalIndex = periods.indexOf(period); const path = `financials.${period.fiscalYear}.${importFieldToAnalysisField(field)}`; const value = period[field]; return <td key={period.fiscalYear} className="min-w-32 px-3 py-2"><Input aria-label={`${label} ${period.fiscalYear}`} type="number" step="any" className="text-right financial-number" placeholder="N/A" value={typeof value === "number" ? value : ""} onChange={(event) => setPeriod(originalIndex, field, event.target.value)} />{adjusted.has(path) && <Adjusted />}</td>; })}</tr>)}</tbody></table></div></Card>;
 }
 
 function ReviewText({ label, path, value, adjusted, onChange }: { label: string; path: string; value: string | null; adjusted: Set<string>; onChange: (value: string) => void }) { return <div><Label>{label}</Label><Input value={value ?? ""} placeholder="N/A" onChange={(event) => onChange(event.target.value)} />{adjusted.has(path) && <Adjusted />}</div>; }
@@ -175,10 +182,18 @@ function ReviewNumber({ label, path, value, adjusted, onChange }: { label: strin
 function Adjusted() { return <span className="mt-1 block text-[9px] font-bold uppercase tracking-wide text-amber-600">User adjusted</span>; }
 function ErrorMessage({ message }: { message: string }) { return <div role="alert" className="mt-5 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{message}</div>; }
 
+async function readApiPayload(response: Response): Promise<CompanyApiPayload> {
+  try {
+    return await response.json();
+  } catch {
+    return { error: response.ok ? "The server returned an invalid response." : `The server request failed with status ${response.status}.` };
+  }
+}
+
 function importFieldToAnalysisField(field: keyof ImportedAnnualFinancials) {
   const map: Partial<Record<keyof ImportedAnnualFinancials, string>> = {
-    revenueMillion: "revenue", grossProfitMillion: "grossProfit", ebitdaMillion: "ebitda", ebitMillion: "ebit", netIncomeMillion: "netIncome", eps: "eps",
-    cashMillion: "cash", shortTermInvestmentsMillion: "shortTermInvestments", totalAssetsMillion: "totalAssets", shortTermDebtMillion: "shortTermDebt", longTermDebtMillion: "longTermDebt", debtMillion: "totalDebt", totalLiabilitiesMillion: "totalLiabilities", shareholdersEquityMillion: "shareholdersEquity",
+    revenueMillion: "revenue", costOfRevenueMillion: "costOfRevenue", grossProfitMillion: "grossProfit", ebitdaMillion: "ebitda", ebitMillion: "ebit", netIncomeMillion: "netIncome", eps: "eps",
+    cashMillion: "cash", shortTermInvestmentsMillion: "shortTermInvestments", totalAssetsMillion: "totalAssets", currentAssetsMillion: "currentAssets", currentLiabilitiesMillion: "currentLiabilities", shortTermDebtMillion: "shortTermDebt", longTermDebtMillion: "longTermDebt", debtMillion: "totalDebt", totalLiabilitiesMillion: "totalLiabilities", shareholdersEquityMillion: "shareholdersEquity",
     cashFlowFromOperationsMillion: "cashFlowFromOperations", capitalExpenditureMillion: "capitalExpenditure", freeCashFlowMillion: "freeCashFlow", acquisitionsMillion: "acquisitions", dividendsPaidMillion: "dividendsPaid", shareRepurchasesMillion: "shareRepurchases",
   };
   return map[field] ?? String(field);

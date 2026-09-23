@@ -107,8 +107,8 @@ export function normalizeSearchResults(payload: unknown): CompanySearchResult[] 
       symbol: symbol.toUpperCase(),
       name,
       currency: text(record.currency),
-      exchange: text(record.stockExchange) ?? text(record.exchange),
-      exchangeShortName: text(record.exchangeShortName),
+      exchange: text(record.stockExchange) ?? text(record.exchangeFullName) ?? text(record.exchange),
+      exchangeShortName: text(record.exchangeShortName) ?? text(record.exchange),
       country: text(record.country),
     }];
   });
@@ -220,7 +220,7 @@ export function normalizeCompany(input: CompanyNormalizationInput): ImportedComp
     currency: text(profile.currency),
     sharePrice: number(quote.price) ?? number(profile.price),
     sharesOutstandingMillion: millions(quote.sharesOutstanding),
-    marketCapitalizationMillion: millions(quote.marketCap) ?? millions(profile.mktCap),
+    marketCapitalizationMillion: millions(quote.marketCap) ?? millions(profile.marketCap) ?? millions(profile.mktCap),
     cashMillion: annualFinancials.find((period) => period.cashMillion !== null)?.cashMillion ?? null,
     debtMillion: annualFinancials.find((period) => period.debtMillion !== null)?.debtMillion ?? null,
     annualFinancials,

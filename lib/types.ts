@@ -2,6 +2,7 @@ export type FinancialYear = {
   year: number;
   periodEnd?: string | null;
   revenue: number | null;
+  costOfRevenue?: number | null;
   grossProfit?: number | null;
   ebitda: number | null;
   ebit: number | null;
@@ -10,6 +11,8 @@ export type FinancialYear = {
   cash?: number | null;
   shortTermInvestments?: number | null;
   totalAssets?: number | null;
+  currentAssets?: number | null;
+  currentLiabilities?: number | null;
   shortTermDebt?: number | null;
   longTermDebt?: number | null;
   totalDebt?: number | null;
@@ -21,6 +24,11 @@ export type FinancialYear = {
   acquisitions?: number | null;
   dividendsPaid?: number | null;
   shareRepurchases?: number | null;
+  filingDate?: string | null;
+  fiscalPeriod?: string | null;
+  form?: string | null;
+  accessionNumber?: string | null;
+  sourceProvider?: string | null;
 };
 
 export type AnalysisSource = {

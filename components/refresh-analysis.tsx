@@ -23,7 +23,11 @@ export function RefreshAnalysisView() {
     if (!analysis?.source) return;
     const controller = new AbortController();
     fetch("/api/companies/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ symbol: analysis.ticker }), signal: controller.signal })
-      .then(async (response) => { const payload = await response.json(); if (!response.ok) throw new Error(payload.error || "Refresh failed."); return payload.company; })
+      .then(async (response) => {
+        const payload = await response.json().catch(() => null) as { error?: string; company?: ImportedCompany } | null;
+        if (!response.ok || !payload?.company) throw new Error(payload?.error || `Refresh failed with status ${response.status}.`);
+        return payload.company;
+      })
       .then(setCompany)
       .catch((requestError) => { if (requestError.name !== "AbortError") setError(requestError instanceof Error ? requestError.message : "Unable to refresh financials."); });
     return () => controller.abort();

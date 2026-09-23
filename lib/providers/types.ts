@@ -5,6 +5,7 @@ export type CompanySearchResult = {
   exchange: string | null;
   exchangeShortName: string | null;
   country: string | null;
+  sourceProvider?: "Alpha Vantage" | "FMP";
 };
 
 export type StatementCurrencies = {
@@ -19,6 +20,7 @@ export type ImportedAnnualFinancials = {
   currency: string | null;
   currencies: StatementCurrencies;
   revenueMillion: number | null;
+  costOfRevenueMillion?: number | null;
   grossProfitMillion: number | null;
   ebitdaMillion: number | null;
   ebitMillion: number | null;
@@ -26,6 +28,8 @@ export type ImportedAnnualFinancials = {
   eps: number | null;
   shortTermInvestmentsMillion: number | null;
   totalAssetsMillion: number | null;
+  currentAssetsMillion?: number | null;
+  currentLiabilitiesMillion?: number | null;
   shortTermDebtMillion: number | null;
   longTermDebtMillion: number | null;
   totalLiabilitiesMillion: number | null;
@@ -39,6 +43,11 @@ export type ImportedAnnualFinancials = {
   cashMillion: number | null;
   debtMillion: number | null;
   dilutedSharesOutstandingMillion: number | null;
+  filingDate?: string | null;
+  fiscalPeriod?: string | null;
+  form?: string | null;
+  accessionNumber?: string | null;
+  sourceProvider?: "SEC" | "Alpha Vantage" | "FMP";
 };
 
 export type FilingLink = {
@@ -75,19 +84,26 @@ export type ImportedCompany = {
 
 export interface FinancialDataProvider {
   searchCompanies(query: string): Promise<CompanySearchResult[]>;
-  getCompanyProfile(symbol: string): Promise<unknown>;
-  getQuote(symbol: string): Promise<unknown>;
-  getIncomeStatements(symbol: string, period: "annual", limit: number): Promise<unknown>;
-  getBalanceSheets(symbol: string, period: "annual", limit: number): Promise<unknown>;
-  getCashFlowStatements(symbol: string, period: "annual", limit: number): Promise<unknown>;
   importCompany(symbol: string): Promise<ImportedCompany>;
 }
+
+export type FinancialDataErrorCategory =
+  | "configuration"
+  | "authentication"
+  | "subscription"
+  | "rate_limit"
+  | "invalid_query"
+  | "unsupported_company"
+  | "missing_data"
+  | "network"
+  | "provider";
 
 export class FinancialDataProviderError extends Error {
   constructor(
     message: string,
     public readonly statusCode = 502,
     public readonly cause?: unknown,
+    public readonly category: FinancialDataErrorCategory = "provider",
   ) {
     super(message);
     this.name = "FinancialDataProviderError";

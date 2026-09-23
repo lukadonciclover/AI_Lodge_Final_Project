@@ -30,10 +30,15 @@ export class FmpFinancialDataProvider implements FinancialDataProvider {
 
   constructor(private readonly options: FmpProviderOptions) {
     if (!options.apiKey.trim()) {
-      throw new FinancialDataProviderError("FMP_API_KEY is not configured.", 503);
+      throw new FinancialDataProviderError(
+        "Financial data configuration error: FMP_API_KEY is not configured on the server. Add it to .env.local for local development or to the deployment environment, then restart the server.",
+        503,
+        undefined,
+        "configuration",
+      );
     }
     this.fetcher = options.fetch ?? fetch;
-    this.baseUrl = options.baseUrl ?? "https://financialmodelingprep.com/api/v3";
+    this.baseUrl = options.baseUrl ?? "https://financialmodelingprep.com/stable";
     this.now = options.now ?? (() => new Date());
     this.annualPeriods = options.annualPeriods ?? 5;
   }
@@ -41,7 +46,7 @@ export class FmpFinancialDataProvider implements FinancialDataProvider {
   async searchCompanies(query: string): Promise<CompanySearchResult[]> {
     const normalizedQuery = query.trim();
     if (!normalizedQuery) return [];
-    const payload = await this.request("search", {
+    const payload = await this.request("search-name", {
       query: normalizedQuery,
       limit: "10",
     }, 3_600);
@@ -49,23 +54,23 @@ export class FmpFinancialDataProvider implements FinancialDataProvider {
   }
 
   getCompanyProfile(symbol: string) {
-    return this.request(`profile/${encodeURIComponent(symbol.trim().toUpperCase())}`, {}, 86_400);
+    return this.request("profile", { symbol: symbol.trim().toUpperCase() }, 86_400);
   }
 
   getQuote(symbol: string) {
-    return this.request(`quote/${encodeURIComponent(symbol.trim().toUpperCase())}`, {}, 900);
+    return this.request("quote", { symbol: symbol.trim().toUpperCase() }, 900);
   }
 
   getIncomeStatements(symbol: string, period: "annual", limit: number) {
-    return this.request(`income-statement/${encodeURIComponent(symbol.trim().toUpperCase())}`, { period, limit: String(limit) }, 86_400);
+    return this.request("income-statement", { symbol: symbol.trim().toUpperCase(), period, limit: String(limit) }, 86_400);
   }
 
   getBalanceSheets(symbol: string, period: "annual", limit: number) {
-    return this.request(`balance-sheet-statement/${encodeURIComponent(symbol.trim().toUpperCase())}`, { period, limit: String(limit) }, 86_400);
+    return this.request("balance-sheet-statement", { symbol: symbol.trim().toUpperCase(), period, limit: String(limit) }, 86_400);
   }
 
   getCashFlowStatements(symbol: string, period: "annual", limit: number) {
-    return this.request(`cash-flow-statement/${encodeURIComponent(symbol.trim().toUpperCase())}`, { period, limit: String(limit) }, 86_400);
+    return this.request("cash-flow-statement", { symbol: symbol.trim().toUpperCase(), period, limit: String(limit) }, 86_400);
   }
 
   async importCompany(symbol: string): Promise<ImportedCompany> {
@@ -118,35 +123,77 @@ export class FmpFinancialDataProvider implements FinancialDataProvider {
     try {
       response = await this.fetcher(url, { next: { revalidate } });
     } catch (error) {
-      throw new FinancialDataProviderError("Unable to reach Financial Modeling Prep.", 502, error);
-    }
-    if (!response.ok) {
-      const message = response.status === 401 || response.status === 403
-        ? "Financial data authentication failed. Check the server API key."
-        : response.status === 429
-          ? "Financial data request limit reached. Please try again later."
-          : `Financial Modeling Prep request failed with status ${response.status}.`;
-      throw new FinancialDataProviderError(
-        message,
-        response.status === 429 ? 429 : response.status === 401 || response.status === 403 ? 503 : 502,
-      );
+      throw new FinancialDataProviderError("Financial data network error: unable to reach Financial Modeling Prep.", 502, error, "network");
     }
 
     let payload: unknown;
     try {
       payload = await response.json();
     } catch (error) {
+      if (!response.ok) throw this.responseError(response.status, null);
       throw new FinancialDataProviderError("Financial Modeling Prep returned invalid JSON.", 502, error);
     }
-    if (payload && typeof payload === "object" && !Array.isArray(payload)) {
-      const errorMessage = (payload as Record<string, unknown>)["Error Message"];
-      if (typeof errorMessage === "string") {
-        const normalized = errorMessage.toLowerCase();
-        if (normalized.includes("api key") || normalized.includes("apikey")) throw new FinancialDataProviderError("Financial data authentication failed. Check the server API key.", 503);
-        if (normalized.includes("limit") || normalized.includes("rate")) throw new FinancialDataProviderError("Financial data request limit reached. Please try again later.", 429);
-        throw new FinancialDataProviderError("Financial Modeling Prep rejected the request.", 502);
-      }
+    const providerMessage = this.providerErrorMessage(payload);
+    if (!response.ok || providerMessage) {
+      throw this.responseError(response.status, providerMessage);
     }
     return payload;
+  }
+
+  private providerErrorMessage(payload: unknown): string | null {
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+    const record = payload as Record<string, unknown>;
+    for (const key of ["Error Message", "message", "error"]) {
+      if (typeof record[key] === "string" && record[key].trim()) return record[key];
+    }
+    return null;
+  }
+
+  private responseError(status: number, providerMessage: string | null): FinancialDataProviderError {
+    const normalized = providerMessage?.toLowerCase() ?? "";
+    const isSubscription = status === 402
+      || ["subscription", "current plan", "upgrade", "premium", "not available"].some((term) => normalized.includes(term));
+    if (isSubscription) {
+      return new FinancialDataProviderError(
+        "Financial data access error: this FMP endpoint is not included in the API key's subscription tier.",
+        503,
+        undefined,
+        "subscription",
+      );
+    }
+    if (status === 429 || normalized.includes("rate limit") || normalized.includes("limit reached")) {
+      return new FinancialDataProviderError(
+        "Financial data rate-limit error: the FMP request limit was reached. Please try again later.",
+        429,
+        undefined,
+        "rate_limit",
+      );
+    }
+    if (status === 401 || status === 403 || normalized.includes("api key") || normalized.includes("apikey")) {
+      return new FinancialDataProviderError(
+        "Financial data authentication error: FMP rejected the server API key. Verify or rotate the key and restart the server.",
+        503,
+        undefined,
+        "authentication",
+      );
+    }
+    if (status === 400 || status === 422 || normalized.includes("invalid symbol") || normalized.includes("invalid query")) {
+      return new FinancialDataProviderError(
+        "Financial data query error: check the company name or ticker and try again.",
+        400,
+        undefined,
+        "invalid_query",
+      );
+    }
+    if (status === 404) {
+      return new FinancialDataProviderError(
+        "Financial data endpoint error: the requested FMP endpoint is unavailable or unsupported.",
+        502,
+      );
+    }
+    return new FinancialDataProviderError(
+      `Financial Modeling Prep request failed with status ${status || "unknown"}.`,
+      502,
+    );
   }
 }
