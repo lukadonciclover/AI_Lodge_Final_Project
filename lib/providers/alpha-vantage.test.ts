@@ -6,7 +6,7 @@ const jsonResponse = (payload: unknown, status = 200) => new Response(JSON.strin
 
 describe("Alpha Vantage provider", () => {
   it("searches symbols with server-side caching and source labels", async () => {
-    const fetchMock = vi.fn(async (input: string | URL, init?: RequestInit & { next?: { revalidate: number } }) => {
+    const fetchMock = vi.fn(async (input: string | URL, init?: RequestInit) => {
       void input;
       void init;
       return jsonResponse({ bestMatches: [{
@@ -21,7 +21,7 @@ describe("Alpha Vantage provider", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(String(fetchMock.mock.calls[0][0])).toContain("function=SYMBOL_SEARCH");
     expect(String(fetchMock.mock.calls[0][0])).toContain("apikey=secret");
-    expect(fetchMock.mock.calls[0][1]).toEqual({ next: { revalidate: 86_400 } });
+    expect(fetchMock.mock.calls[0][1]).toEqual({ cache: "no-store" });
   });
 
   it("detects rate limits returned with HTTP 200 without exposing the key", async () => {
@@ -31,7 +31,21 @@ describe("Alpha Vantage provider", () => {
     });
     const error = await provider.searchCompanies("DUOL").catch((caught) => caught);
     expect(error).toMatchObject({ category: "rate_limit", statusCode: 429 });
+    expect(error.message).toContain("Wait at least one minute");
     expect(error.message).not.toContain("do-not-expose");
+  });
+
+  it("does not cache rate-limit responses", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ Note: "Thank you for using Alpha Vantage. Our standard API rate limit applies." }))
+      .mockResolvedValueOnce(jsonResponse({ bestMatches: [{
+        "1. symbol": "AAPL", "2. name": "Apple Inc.", "4. region": "United States", "8. currency": "USD",
+      }] }));
+    const provider = new AlphaVantageProvider({ apiKey: "secret", fetch: fetchMock });
+
+    await expect(provider.searchCompanies("AAPL")).rejects.toMatchObject({ category: "rate_limit" });
+    await expect(provider.searchCompanies("AAPL")).resolves.toMatchObject([{ symbol: "AAPL" }]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("distinguishes invalid authentication messages returned with HTTP 200", async () => {

@@ -4,6 +4,7 @@ import { AlphaVantageProvider } from "@/lib/providers/alpha-vantage";
 import { FmpFinancialDataProvider } from "@/lib/providers/fmp";
 import { HybridFinancialDataProvider } from "@/lib/providers/hybrid";
 import { SecCompanyFactsProvider } from "@/lib/providers/sec";
+import type { FinancialDataProvider } from "@/lib/providers/types";
 
 const alphaVantageApiKey = process.env.ALPHA_VANTAGE_API_KEY?.trim() ?? "";
 const secUserAgent = process.env.SEC_USER_AGENT?.trim() ?? "";
@@ -15,10 +16,13 @@ console.info("[financial-data] provider configuration", {
   fmpSearchFallbackConfigured: fmpApiKey.length > 0,
 });
 
+let provider: FinancialDataProvider | undefined;
+
 export function createFinancialDataProvider() {
-  return new HybridFinancialDataProvider(
+  provider ??= new HybridFinancialDataProvider(
     new AlphaVantageProvider({ apiKey: alphaVantageApiKey }),
     new SecCompanyFactsProvider({ userAgent: secUserAgent }),
     fmpApiKey ? new FmpFinancialDataProvider({ apiKey: fmpApiKey }) : undefined,
   );
+  return provider;
 }
