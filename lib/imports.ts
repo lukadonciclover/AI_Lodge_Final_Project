@@ -66,6 +66,12 @@ function toFinancialYear(period: ImportedAnnualFinancials): FinancialYear {
   };
 }
 
+function currentBalanceSheetValue(companyValue: number | null | undefined, periods: ImportedAnnualFinancials[], field: "cashMillion" | "debtMillion") {
+  if (companyValue !== null && companyValue !== undefined) return companyValue;
+  const latest = [...periods].sort((a, b) => b.fiscalYear - a.fiscalYear).find((period) => period[field] !== null && period[field] !== undefined);
+  return latest?.[field] ?? null;
+}
+
 export function importedCompanyToAnalysis(
   company: ImportedCompany,
   adjustedFields: string[] = [],
@@ -73,6 +79,8 @@ export function importedCompanyToAnalysis(
 ): CompanyAnalysis {
   const latest = company.annualFinancials[0];
   const currency = company.currency ?? latest?.currency ?? "N/A";
+  const currentCash = currentBalanceSheetValue(company.cashMillion, company.annualFinancials, "cashMillion");
+  const currentDebt = currentBalanceSheetValue(company.debtMillion, company.annualFinancials, "debtMillion");
   return {
     id: existing?.id ?? `${company.symbol.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Date.now().toString(36)}`,
     companyName: company.name,
@@ -86,8 +94,8 @@ export function importedCompanyToAnalysis(
     currentSharePrice: company.sharePrice,
     sharesOutstanding: company.sharesOutstandingMillion,
     marketCapitalization: company.marketCapitalizationMillion,
-    cash: latest ? latest.cashMillion : company.cashMillion,
-    debt: latest ? latest.debtMillion : company.debtMillion,
+    cash: currentCash,
+    debt: currentDebt,
     financials: company.annualFinancials.map(toFinancialYear).sort((a, b) => a.year - b.year),
     thesis: existing?.thesis ?? {
       summary: "",
@@ -127,11 +135,6 @@ export function preserveUserAdjustments(existing: CompanyAnalysis, refreshed: Co
     }
     return next;
   });
-  const latest = [...refreshed.financials].sort((a, b) => b.year - a.year)[0];
-  if (latest) {
-    refreshed.cash = latest.cash ?? null;
-    refreshed.debt = latest.totalDebt ?? null;
-  }
   refreshed.userAdjustedFields = Array.from(adjusted);
   refreshed.thesis = existing.thesis;
   return refreshed;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, ArrowLeft, Check, ExternalLink, LoaderCircle, Search } from "lucide-react";
 import { useAnalyses } from "@/components/providers/analysis-provider";
@@ -50,10 +50,13 @@ export function CompanyImportFlow({ onCancel, initialCompany, existingId, onConf
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [adjusted, setAdjusted] = useState<Set<string>>(new Set());
+  const searchInFlight = useRef(false);
 
   async function searchCompanies(event: React.FormEvent) {
     event.preventDefault();
     if (query.trim().length < 1) { setError("Enter a company name or ticker."); return; }
+    if (searchInFlight.current) return;
+    searchInFlight.current = true;
     setLoading(true); setError(""); setResults([]);
     try {
       const response = await fetch(`/api/companies/search?q=${encodeURIComponent(query.trim())}`);
@@ -64,7 +67,7 @@ export function CompanyImportFlow({ onCancel, initialCompany, existingId, onConf
       if (!searchResults.length) setError("No listed companies matched that search. Check the name or ticker and try again.");
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Unable to search companies. Please try again.");
-    } finally { setLoading(false); }
+    } finally { searchInFlight.current = false; setLoading(false); }
   }
 
   async function selectCompany(result: CompanySearchResult) {
@@ -162,6 +165,8 @@ function ImportReview({ company, adjusted, setCompany, setAdjusted, error, onCon
         <ReviewNumber label="Share price" path="company.currentSharePrice" value={company.sharePrice} adjusted={adjusted} onChange={(value) => setNumber("sharePrice", value, "currentSharePrice")} />
         <ReviewNumber label="Market cap (m)" path="company.marketCapitalization" value={company.marketCapitalizationMillion} adjusted={adjusted} onChange={(value) => setNumber("marketCapitalizationMillion", value, "marketCapitalization")} />
         <ReviewNumber label="Shares outstanding (m)" path="company.sharesOutstanding" value={company.sharesOutstandingMillion} adjusted={adjusted} onChange={(value) => setNumber("sharesOutstandingMillion", value, "sharesOutstanding")} />
+        <ReviewNumber label="Cash & equivalents (current, m)" path="company.cash" value={company.cashMillion} adjusted={adjusted} onChange={(value) => setNumber("cashMillion", value, "cash")} />
+        <ReviewNumber label="Total debt (current, m)" path="company.debt" value={company.debtMillion} adjusted={adjusted} onChange={(value) => setNumber("debtMillion", value, "debt")} />
         <div className="sm:col-span-2 lg:col-span-4"><Label>Company description</Label><Textarea rows={4} value={company.description ?? ""} onChange={(event) => setText("description", event.target.value)} />{adjusted.has("company.description") && <Adjusted />}</div>
       </CardContent></Card>
       <StatementTable title="Income statement" fields={incomeFields} periods={sorted} adjusted={adjusted} setPeriod={setPeriod} />

@@ -5,9 +5,9 @@ import {
   type ImportedCompany,
 } from "@/lib/providers/types";
 
-type NextFetchInit = RequestInit & { next?: { revalidate: number } };
-type AlphaFetch = (input: string | URL, init?: NextFetchInit) => Promise<Response>;
+type AlphaFetch = (input: string | URL, init?: RequestInit) => Promise<Response>;
 type AlphaRecord = Record<string, unknown>;
+type CachedRequest = { expiresAt: number; value: Promise<unknown> };
 
 export type AlphaCompanyDetails = {
   symbol: string;
@@ -27,7 +27,7 @@ export type AlphaCompanyDetails = {
 
 export class AlphaVantageProvider {
   private readonly fetcher: AlphaFetch;
-  private readonly cache = new Map<string, Promise<unknown>>();
+  private readonly cache = new Map<string, CachedRequest>();
   private readonly baseUrl: string;
 
   constructor(private readonly options: { apiKey: string; fetch?: AlphaFetch; baseUrl?: string }) {
@@ -134,24 +134,26 @@ export class AlphaVantageProvider {
     url.searchParams.set("apikey", this.options.apiKey);
     const cacheKey = `${functionName}:${JSON.stringify(parameters)}`;
     const existing = this.cache.get(cacheKey);
-    if (existing) return existing;
-    const request = this.fetchJson(url, revalidate, functionName).catch((error) => {
+    if (existing && existing.expiresAt > Date.now()) return existing.value;
+    if (existing) this.cache.delete(cacheKey);
+    const request = this.fetchJson(url, functionName).catch((error) => {
       this.cache.delete(cacheKey);
       throw error;
     });
-    this.cache.set(cacheKey, request);
+    this.cache.set(cacheKey, { expiresAt: Date.now() + revalidate * 1_000, value: request });
     return request;
   }
 
-  private async fetchJson(url: URL, revalidate: number, functionName: string) {
+  private async fetchJson(url: URL, functionName: string) {
     let response: Response;
     try {
-      response = await this.fetcher(url, { next: { revalidate } });
+      // Cache parsed successes above so HTTP 200 quota errors never enter Next's persistent fetch cache.
+      response = await this.fetcher(url, { cache: "no-store" });
     } catch (error) {
       throw new FinancialDataProviderError("Alpha Vantage network error: unable to reach the provider.", 502, error, "network");
     }
     if (response.status === 429) {
-      throw new FinancialDataProviderError("Alpha Vantage rate-limit error: request allowance reached.", 429, undefined, "rate_limit");
+      throw alphaRateLimitError();
     }
     let payload: unknown;
     try {
@@ -254,7 +256,7 @@ function alphaErrorMessage(payload: unknown) {
 function classifyAlphaError(status: number, message: string | null) {
   const normalized = message?.toLowerCase() ?? "";
   if (status === 429 || ["rate limit", "call frequency", "requests per day", "requests per minute", "thank you for using alpha vantage"].some((term) => normalized.includes(term))) {
-    return new FinancialDataProviderError("Alpha Vantage rate-limit error: request allowance reached.", 429, undefined, "rate_limit");
+    return alphaRateLimitError();
   }
   if (status === 401 || status === 403 || ["api key", "apikey", "invalid key"].some((term) => normalized.includes(term))) {
     return new FinancialDataProviderError("Alpha Vantage authentication error: the server API key was rejected.", 503, undefined, "authentication");
@@ -266,6 +268,15 @@ function classifyAlphaError(status: number, message: string | null) {
     return new FinancialDataProviderError("Alpha Vantage does not support this company or query.", 404, undefined, "unsupported_company");
   }
   return new FinancialDataProviderError(`Alpha Vantage request failed with status ${status || "unknown"}.`, 502);
+}
+
+function alphaRateLimitError() {
+  return new FinancialDataProviderError(
+    "Alpha Vantage request limit reached. Wait at least one minute and try again. If the message continues, the daily allowance is exhausted; retry after Alpha Vantage resets it.",
+    429,
+    undefined,
+    "rate_limit",
+  );
 }
 
 function hasExpectedPayload(functionName: string, payload: unknown) {
