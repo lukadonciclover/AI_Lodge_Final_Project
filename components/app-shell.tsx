@@ -41,7 +41,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {open && <div className="fixed inset-0 z-50 lg:hidden"><button aria-label="Close navigation" className="absolute inset-0 bg-navy-950/60" onClick={() => setOpen(false)} /><aside className="relative flex h-full w-72 flex-col bg-navy-950">{sidebar}</aside></div>}
       <div className="lg:pl-64">
         <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-line bg-white/95 px-4 backdrop-blur md:px-8">
-          <div className="flex items-center gap-3"><Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setOpen(true)}><Menu size={20} /></Button><div className="hidden h-2 w-2 rounded-full bg-emerald-500 sm:block" /><p className="text-xs font-medium text-slate-500">Market workspace <span className="mx-2 text-slate-300">/</span> <span className="text-ink">Equity research</span></p></div>
+          <div className="flex items-center gap-3"><Button aria-label="Open navigation" variant="ghost" size="icon" className="lg:hidden" onClick={() => setOpen(true)}><Menu size={20} /></Button><div className="hidden h-2 w-2 rounded-full bg-emerald-500 sm:block" /><p className="hidden text-xs font-medium text-slate-500 sm:block">Market workspace <span className="mx-2 text-slate-300">/</span> <span className="text-ink">Equity research</span></p></div>
           <Button asChild size="sm" variant="accent"><Link href="/new"><Plus size={15} />New analysis</Link></Button>
         </header>
         <main className="mx-auto max-w-[1500px] p-4 md:p-8">{children}</main>

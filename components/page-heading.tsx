@@ -8,7 +8,7 @@ export function PageHeading({ eyebrow, title, description, actions }: { eyebrow?
         <h1 className="text-2xl font-bold tracking-tight text-navy-950 md:text-3xl">{title}</h1>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">{description}</p>
       </div>
-      {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
+      {actions && <div className="flex flex-wrap items-center gap-2 sm:shrink-0">{actions}</div>}
     </div>
   );
 }

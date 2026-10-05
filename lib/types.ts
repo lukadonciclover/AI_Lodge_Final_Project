@@ -1,10 +1,40 @@
 export type FinancialYear = {
   year: number;
-  revenue: number;
-  ebitda: number;
-  ebit: number;
-  netIncome: number;
-  freeCashFlow: number;
+  periodEnd?: string | null;
+  revenue: number | null;
+  costOfRevenue?: number | null;
+  grossProfit?: number | null;
+  ebitda: number | null;
+  ebit: number | null;
+  netIncome: number | null;
+  eps?: number | null;
+  cash?: number | null;
+  shortTermInvestments?: number | null;
+  totalAssets?: number | null;
+  currentAssets?: number | null;
+  currentLiabilities?: number | null;
+  shortTermDebt?: number | null;
+  longTermDebt?: number | null;
+  totalDebt?: number | null;
+  totalLiabilities?: number | null;
+  shareholdersEquity?: number | null;
+  cashFlowFromOperations?: number | null;
+  capitalExpenditure?: number | null;
+  freeCashFlow: number | null;
+  acquisitions?: number | null;
+  dividendsPaid?: number | null;
+  shareRepurchases?: number | null;
+  filingDate?: string | null;
+  fiscalPeriod?: string | null;
+  form?: string | null;
+  accessionNumber?: string | null;
+  sourceProvider?: string | null;
+};
+
+export type AnalysisSource = {
+  provider: string;
+  retrievedAt: string;
+  latestFilingUrl: string | null;
 };
 
 export type Thesis = {
@@ -20,12 +50,20 @@ export type CompanyAnalysis = {
   companyName: string;
   ticker: string;
   industry: string;
+  sector?: string | null;
+  exchange?: string | null;
+  country?: string | null;
+  description?: string | null;
   currency: string;
-  currentSharePrice: number;
-  sharesOutstanding: number;
-  cash: number;
-  debt: number;
+  currentSharePrice: number | null;
+  sharesOutstanding: number | null;
+  marketCapitalization?: number | null;
+  cash: number | null;
+  debt: number | null;
   financials: FinancialYear[];
   thesis: Thesis;
+  source?: AnalysisSource | null;
+  importWarnings?: string[];
+  userAdjustedFields?: string[];
   updatedAt: string;
 };
